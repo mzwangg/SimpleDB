@@ -18,12 +18,29 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class Catalog {
 
+    //map table name to table ID
+    private HashMap<String, Integer> name2id;
+
+    //map table ID to DbFiles
+    private HashMap<Integer, DbFile> id2dbFile;
+
+    //map table ID to primary key
+    private HashMap<Integer, String> id2pkey;
+
+    //map table ID to table name
+    private HashMap<Integer, String> id2name;
+
+
     /**
      * Constructor.
      * Creates a new, empty catalog.
      */
     public Catalog() {
         // some code goes here
+        name2id = new HashMap<>();
+        id2dbFile = new HashMap<>();
+        id2pkey = new HashMap<>();
+        id2name = new HashMap<>();
     }
 
     /**
@@ -37,6 +54,24 @@ public class Catalog {
      */
     public void addTable(DbFile file, String name, String pkeyField) {
         // some code goes here
+        if (name == null || pkeyField == null) {
+            throw new IllegalArgumentException();
+        }
+        int tableId = file.getId();
+
+        //if conflicted,delete the original
+        if (name2id.containsKey(name)) {
+            int id = name2id.get(name);
+            id2dbFile.remove(id);
+            id2name.remove(id);
+            id2pkey.remove(id);
+            name2id.remove(name);
+        }
+
+        id2dbFile.put(tableId, file);
+        id2name.put(tableId, name);
+        id2pkey.put(tableId, pkeyField);
+        name2id.put(name, tableId);
     }
 
     public void addTable(DbFile file, String name) {
@@ -46,8 +81,8 @@ public class Catalog {
     /**
      * Add a new table to the catalog.
      * This table has tuples formatted using the specified TupleDesc and its
-     * contents are stored in the specified DbFile.
-     * @param file the contents of the table to add;  file.getId() is the identfier of
+     * contents are stored in the sbFile.
+     * @param file the contents of thepecified D table to add;  file.getId() is the identfier of
      *    this file/tupledesc param for the calls getTupleDesc and getFile
      */
     public void addTable(DbFile file) {
@@ -60,7 +95,10 @@ public class Catalog {
      */
     public int getTableId(String name) throws NoSuchElementException {
         // some code goes here
-        return 0;
+        if(name==null||!name2id.containsKey(name)){
+            throw new NoSuchElementException();
+        }
+        return name2id.get(name);
     }
 
     /**
@@ -71,7 +109,10 @@ public class Catalog {
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        if(!id2dbFile.containsKey(tableid)){
+            throw new NoSuchElementException();
+        }
+        return id2dbFile.get(tableid).getTupleDesc();
     }
 
     /**
@@ -82,27 +123,40 @@ public class Catalog {
      */
     public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
         // some code goes here
-        return null;
+        if(!id2dbFile.containsKey(tableid)){
+            throw new NoSuchElementException();
+        }
+        return id2dbFile.get(tableid);
     }
 
     public String getPrimaryKey(int tableid) {
         // some code goes here
-        return null;
+        if(!id2dbFile.containsKey(tableid)){
+            throw new NoSuchElementException();
+        }
+        return id2pkey.get(tableid);
     }
 
     public Iterator<Integer> tableIdIterator() {
         // some code goes here
-        return null;
+        return id2dbFile.keySet().iterator();
     }
 
     public String getTableName(int id) {
         // some code goes here
-        return null;
+        if(!id2dbFile.containsKey(id)){
+            throw new NoSuchElementException();
+        }
+        return id2name.get(id);
     }
     
     /** Delete all tables from the catalog */
     public void clear() {
         // some code goes here
+        name2id.clear();
+        id2dbFile.clear();
+        id2pkey.clear();
+        id2name.clear();
     }
     
     /**
@@ -160,4 +214,3 @@ public class Catalog {
         }
     }
 }
-
