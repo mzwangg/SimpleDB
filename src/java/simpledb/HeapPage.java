@@ -67,19 +67,19 @@ public class HeapPage implements Page {
     */
     private int getNumTuples() {        
         // some code goes here
-        return 0;
-
+        if(numSlots != 0){
+            return numSlots;
+        }
+        return (BufferPool.getPageSize() * 8) / (td.getSize() * 8 + 1);
     }
 
     /**
      * Computes the number of bytes in the header of a page in a HeapFile with each tuple occupying tupleSize bytes
      * @return the number of bytes in the header of a page in a HeapFile with each tuple occupying tupleSize bytes
      */
-    private int getHeaderSize() {        
-        
+    private int getHeaderSize() {
         // some code goes here
-        return 0;
-                 
+        return (int)Math.ceil(getNumTuples()/8.0);
     }
     
     /** Return a view of this page before it was modified
@@ -112,7 +112,7 @@ public class HeapPage implements Page {
      */
     public HeapPageId getId() {
     // some code goes here
-    throw new UnsupportedOperationException("implement this");
+    return pid;
     }
 
     /**
@@ -282,7 +282,14 @@ public class HeapPage implements Page {
      */
     public int getNumEmptySlots() {
         // some code goes here
-        return 0;
+        int numEmptySlots = 0;
+        int numTuples=getNumTuples();
+        for (int i = 0; i < numTuples; i++) {
+            if (!isSlotUsed(i)) {
+                numEmptySlots++;
+            }
+        }
+        return numEmptySlots;
     }
 
     /**
@@ -290,7 +297,9 @@ public class HeapPage implements Page {
      */
     public boolean isSlotUsed(int i) {
         // some code goes here
-        return false;
+        int byteIndex = i / 8;
+        int posInByte = i % 8;
+        return (header[byteIndex] & (1 << posInByte)) != 0;
     }
 
     /**
@@ -301,13 +310,46 @@ public class HeapPage implements Page {
         // not necessary for lab1
     }
 
+    private int getSlotsUsedCount(){
+        int ans=0;
+        int numTuples=getNumTuples();
+        for(int i=0;i<numTuples;i++){
+            if(isSlotUsed(i)){
+                ans++;
+            }
+        }
+        return ans;
+    }
+
     /**
      * @return an iterator over all tuples on this page (calling remove on this iterator throws an UnsupportedOperationException)
      * (note that this iterator shouldn't return tuples in empty slots!)
      */
     public Iterator<Tuple> iterator() {
         // some code goes here
-        return null;
+        return new Iterator<Tuple>() {
+
+            private int slotsCur=-1;
+
+            private int usedSlotsCur=0;
+
+            private final int numUsedSlots=getSlotsUsedCount();
+
+            @Override
+            public boolean hasNext() {
+                return usedSlotsCur<numUsedSlots;
+            }
+
+            @Override
+            public Tuple next() {
+                if (!hasNext()) {
+                    throw new NoSuchElementException();
+                }
+                while(!isSlotUsed(++slotsCur));
+                usedSlotsCur++;
+                return tuples[slotsCur];
+            }
+        };
     }
 
 }

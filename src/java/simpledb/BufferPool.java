@@ -1,8 +1,9 @@
 package simpledb;
 
-import java.io.*;
-
+import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.Iterator;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -26,6 +27,15 @@ public class BufferPool {
     constructor instead. */
     public static final int DEFAULT_PAGES = 50;
 
+    //max number of pages
+    public final int NUM_PAGES;
+
+    //map page ID to page
+    private ConcurrentHashMap<PageId, Page> pid2page;
+    private ConcurrentHashMap<PageId, Permissions> pid2perm;
+
+    private ConcurrentHashMap<PageId,TransactionId> pid2tid;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -33,6 +43,10 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
+        NUM_PAGES=numPages;
+        pid2page=new ConcurrentHashMap<>(NUM_PAGES);
+        pid2perm=new ConcurrentHashMap<>(NUM_PAGES);
+        pid2tid=new ConcurrentHashMap<>(NUM_PAGES);
     }
     
     public static int getPageSize() {
@@ -67,7 +81,23 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
         // some code goes here
-        return null;
+
+        //lock()
+
+        if(pid2page.containsKey(pid)){
+            return pid2page.get(pid);
+        }
+
+        Page newPage = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+        if(pid2page.size()>NUM_PAGES){
+            evictPage();
+        }
+        pid2page.put(pid,newPage);
+        pid2perm.put(pid,perm);
+        pid2tid.put(pid,tid);
+
+        return newPage;
+
     }
 
     /**
