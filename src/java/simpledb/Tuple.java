@@ -1,7 +1,6 @@
 package simpledb;
 
 import java.io.Serializable;
-import java.util.Arrays;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
@@ -23,14 +22,16 @@ public class Tuple implements Serializable {
     /**
      * Create a new tuple with the specified schema (type).
      *
-     * @param td
-     *            the schema of this tuple. It must be a valid TupleDesc
-     *            instance with at least one field.
+     * @param td the schema of this tuple. It must be a valid TupleDesc
+     *           instance with at least one field.
      */
     public Tuple(TupleDesc td) {
         // some code goes here
-        tupleDesc =td;
-        fields=new Field[td.numFields()];
+        if (td.numFields() == 0) {
+            throw new IllegalArgumentException();
+        }
+        tupleDesc = td;
+        fields = new Field[td.numFields()];
     }
 
     /**
@@ -43,7 +44,7 @@ public class Tuple implements Serializable {
 
     /**
      * @return The RecordId representing the location of this tuple on disk. May
-     *         be null.
+     * be null.
      */
     public RecordId getRecordId() {
         // some code goes here
@@ -53,40 +54,35 @@ public class Tuple implements Serializable {
     /**
      * Set the RecordId information for this tuple.
      *
-     * @param rid
-     *            the new RecordId for this tuple.
+     * @param rid the new RecordId for this tuple.
      */
     public void setRecordId(RecordId rid) {
         // some code goes here
-        recordId=rid;
+        recordId = rid;
     }
 
     /**
      * Change the value of the ith field of this tuple.
      *
-     * @param i
-     *            index of the field to change. It must be a valid index.
-     * @param f
-     *            new value for the field.
+     * @param i index of the field to change. It must be a valid index.
+     * @param f new value for the field.
      */
     public void setField(int i, Field f) {
         // some code goes here
-        if(i<0||i>tupleDesc.numFields()){
-            throw new IllegalArgumentException("Illegal index");
+        if (i < 0 || i > tupleDesc.numFields()) {
+            throw new IllegalArgumentException();
         }
-        fields[i]=f;
+        fields[i] = f;
     }
 
     /**
+     * @param i field index to return. Must be a valid index.
      * @return the value of the ith field, or null if it has not been set.
-     *
-     * @param i
-     *            field index to return. Must be a valid index.
      */
     public Field getField(int i) {
         // some code goes here
-        if(i<0||i>tupleDesc.numFields()){
-            throw new IllegalArgumentException("Illegal index");
+        if (i < 0 || i > tupleDesc.numFields()) {
+            throw new IllegalArgumentException();
         }
         return fields[i];
     }
@@ -94,9 +90,9 @@ public class Tuple implements Serializable {
     /**
      * Returns the contents of this Tuple as a string. Note that to pass the
      * system tests, the format needs to be as follows:
-     *
+     * <p>
      * column1\tcolumn2\tcolumn3\t...\tcolumnN
-     *
+     * <p>
      * where \t is any whitespace (except a newline)
      */
     public String toString() {
@@ -105,29 +101,27 @@ public class Tuple implements Serializable {
         for (Field item : fields) {
             result.append(item.toString()).append("\t");
         }
-        result.deleteCharAt(result.length()-1);
+        result.deleteCharAt(result.length() - 1);
         return result.toString();
     }
 
     /**
-     * @return
-     *        An iterator which iterates over all the fields of this tuple
-     * */
-    public Iterator<Field> fields()
-    {
+     * @return An iterator which iterates over all the fields of this tuple
+     */
+    public Iterator<Field> fields() {
         // some code goes here
         return new Iterator<Field>() {
 
-            private int cur=0;
+            private int cur = 0;
 
             @Override
             public boolean hasNext() {
-                return cur+1<fields.length;
+                return cur + 1 < fields.length;
             }
 
             @Override
             public Field next() {
-                if(!hasNext()){
+                if (!hasNext()) {
                     throw new NoSuchElementException();
                 }
                 return fields[cur++];
@@ -137,10 +131,9 @@ public class Tuple implements Serializable {
 
     /**
      * reset the TupleDesc of this tuple (only affecting the TupleDesc)
-     * */
-    public void resetTupleDesc(TupleDesc td)
-    {
+     */
+    public void resetTupleDesc(TupleDesc td) {
         // some code goes here
-        tupleDesc= new TupleDesc(td.getTdAr());
+        tupleDesc = new TupleDesc(td.getTdAr());
     }
 }

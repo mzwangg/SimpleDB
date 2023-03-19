@@ -1,7 +1,11 @@
 package simpledb;
 
-import java.io.*;
-import java.util.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
  * HeapFile is an implementation of a DbFile that stores a collection of tuples
@@ -9,9 +13,9 @@ import java.util.*;
  * size, and the file is simply a collection of those pages. HeapFile works
  * closely with HeapPage. The format of HeapPages is described in the HeapPage
  * constructor.
- * 
- * @see simpledb.HeapPage#HeapPage
+ *
  * @author Sam Madden
+ * @see simpledb.HeapPage#HeapPage
  */
 public class HeapFile implements DbFile {
 
@@ -23,21 +27,20 @@ public class HeapFile implements DbFile {
 
     /**
      * Constructs a heap file backed by the specified file.
-     * 
-     * @param f
-     *            the file that stores the on-disk backing store for this heap
-     *            file.
+     *
+     * @param f the file that stores the on-disk backing store for this heap
+     *          file.
      */
     public HeapFile(File f, TupleDesc td) {
         // some code goes here
-        file=f;
-        tupleDesc=td;
-        numPage=(int)(file.length()/BufferPool.getPageSize());
+        file = f;
+        tupleDesc = td;
+        numPage = (int) (file.length() / BufferPool.getPageSize());
     }
 
     /**
      * Returns the File backing this HeapFile on disk.
-     * 
+     *
      * @return the File backing this HeapFile on disk.
      */
     public File getFile() {
@@ -51,7 +54,7 @@ public class HeapFile implements DbFile {
      * HeapFile has a "unique id," and that you always return the same value for
      * a particular HeapFile. We suggest hashing the absolute file name of the
      * file underlying the heapfile, i.e. f.getAbsoluteFile().hashCode().
-     * 
+     *
      * @return an ID uniquely identifying this HeapFile.
      */
     public int getId() {
@@ -61,7 +64,7 @@ public class HeapFile implements DbFile {
 
     /**
      * Returns the TupleDesc of the table stored in this DbFile.
-     * 
+     *
      * @return TupleDesc of this DbFile.
      */
     public TupleDesc getTupleDesc() {
@@ -129,7 +132,7 @@ public class HeapFile implements DbFile {
             public void open() throws DbException, TransactionAbortedException {
                 pagePos = 0;
                 HeapPageId pid = new HeapPageId(getId(), pagePos);
-                tupleIterator = ((HeapPage)Database.getBufferPool()
+                tupleIterator = ((HeapPage) Database.getBufferPool()
                         .getPage(tid, pid, Permissions.READ_ONLY)).iterator();
             }
 
@@ -138,14 +141,14 @@ public class HeapFile implements DbFile {
                 if (tupleIterator == null) {
                     return false;
                 }
-                
+
                 if (tupleIterator.hasNext()) {
                     return true;
                 }
-                
+
                 if (++pagePos < numPages()) {
                     HeapPageId pid = new HeapPageId(getId(), pagePos);
-                    tupleIterator = ((HeapPage)Database.getBufferPool()
+                    tupleIterator = ((HeapPage) Database.getBufferPool()
                             .getPage(tid, pid, Permissions.READ_ONLY)).iterator();
                     return tupleIterator.hasNext();
                 }
@@ -168,6 +171,7 @@ public class HeapFile implements DbFile {
 
             @Override
             public void close() {
+                pagePos = 0;
                 tupleIterator = null;
             }
         };

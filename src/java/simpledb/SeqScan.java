@@ -1,6 +1,6 @@
 package simpledb;
 
-import java.util.*;
+import java.util.NoSuchElementException;
 
 /**
  * SeqScan is an implementation of a sequential scan access method that reads
@@ -25,17 +25,14 @@ public class SeqScan implements OpIterator {
      * Creates a sequential scan over the specified table as a part of the
      * specified transaction.
      *
-     * @param tid
-     *            The transaction this scan is running as a part of.
-     * @param tableid
-     *            the table to scan.
-     * @param tableAlias
-     *            the alias of this table (needed by the parser); the returned
-     *            tupleDesc should have fields with name tableAlias.fieldName
-     *            (note: this class is not responsible for handling a case where
-     *            tableAlias or fieldName are null. It shouldn't crash if they
-     *            are, but the resulting name can be null.fieldName,
-     *            tableAlias.null, or null.null).
+     * @param tid        The transaction this scan is running as a part of.
+     * @param tableid    the table to scan.
+     * @param tableAlias the alias of this table (needed by the parser); the returned
+     *                   tupleDesc should have fields with name tableAlias.fieldName
+     *                   (note: this class is not responsible for handling a case where
+     *                   tableAlias or fieldName are null. It shouldn't crash if they
+     *                   are, but the resulting name can be null.fieldName,
+     *                   tableAlias.null, or null.null).
      */
     public SeqScan(TransactionId tid, int tableid, String tableAlias) {
         // some code goes here
@@ -45,44 +42,41 @@ public class SeqScan implements OpIterator {
         tupleIterator = Database.getCatalog().getDatabaseFile(tableid).iterator(tid);
     }
 
+    public SeqScan(TransactionId tid, int tableId) {
+        this(tid, tableId, Database.getCatalog().getTableName(tableId));
+    }
+
     /**
-     * @return
-     *       return the table name of the table the operator scans. This should
-     *       be the actual name of the table in the catalog of the database
-     * */
+     * @return return the table name of the table the operator scans. This should
+     * be the actual name of the table in the catalog of the database
+     */
     public String getTableName() {
         return Database.getCatalog().getTableName(tableId);
     }
 
     /**
      * @return Return the alias of the table this operator scans.
-     * */
-    public String getAlias()
-    {
+     */
+    public String getAlias() {
         // some code goes here
         return tableAlias;
     }
 
     /**
      * Reset the tableid, and tableAlias of this operator.
-     * @param tableid
-     *            the table to scan.
-     * @param tableAlias
-     *            the alias of this table (needed by the parser); the returned
-     *            tupleDesc should have fields with name tableAlias.fieldName
-     *            (note: this class is not responsible for handling a case where
-     *            tableAlias or fieldName are null. It shouldn't crash if they
-     *            are, but the resulting name can be null.fieldName,
-     *            tableAlias.null, or null.null).
+     *
+     * @param tableid    the table to scan.
+     * @param tableAlias the alias of this table (needed by the parser); the returned
+     *                   tupleDesc should have fields with name tableAlias.fieldName
+     *                   (note: this class is not responsible for handling a case where
+     *                   tableAlias or fieldName are null. It shouldn't crash if they
+     *                   are, but the resulting name can be null.fieldName,
+     *                   tableAlias.null, or null.null).
      */
     public void reset(int tableid, String tableAlias) {
         // some code goes here
         this.tableId = tableid;
         this.tableAlias = tableAlias;
-    }
-
-    public SeqScan(TransactionId tid, int tableId) {
-        this(tid, tableId, Database.getCatalog().getTableName(tableId));
     }
 
     public void open() throws DbException, TransactionAbortedException {
@@ -98,7 +92,7 @@ public class SeqScan implements OpIterator {
      * (e.g., "alias.fieldName").
      *
      * @return the TupleDesc with field names from the underlying HeapFile,
-     *         prefixed with the tableAlias string from the constructor.
+     * prefixed with the tableAlias string from the constructor.
      */
     public TupleDesc getTupleDesc() {
         // some code goes here
@@ -115,7 +109,7 @@ public class SeqScan implements OpIterator {
             types[i] = desc.getFieldType(i);
             String prefix = (getAlias() == null ? "null." : getAlias() + ".");
             String fieldName = desc.getFieldName(i);
-            fieldName = fieldName == null ? "null" : fieldName;
+            fieldName = (fieldName == null ? "null" : fieldName);
             names[i] = prefix + fieldName;
         }
 
@@ -130,14 +124,14 @@ public class SeqScan implements OpIterator {
     public Tuple next() throws NoSuchElementException,
             TransactionAbortedException, DbException {
         // some code goes here
-        Tuple oldTuple = tupleIterator.next();
-        Tuple newTuple = new Tuple(getTupleDesc());
-        newTuple.setRecordId(oldTuple.getRecordId());
-        int fildsNum=oldTuple.getTupleDesc().numFields();
-        for(int i=0;i<fildsNum;i++){
-            newTuple.setField(i,oldTuple.getField(i));
+        Tuple tuple = tupleIterator.next();
+        Tuple deepCopyTuple = new Tuple(getTupleDesc());
+        deepCopyTuple.setRecordId(tuple.getRecordId());
+        int fildsNum = tuple.getTupleDesc().numFields();
+        for (int i = 0; i < fildsNum; i++) {
+            deepCopyTuple.setField(i, tuple.getField(i));
         }
-        return newTuple;
+        return deepCopyTuple;
     }
 
     public void close() {

@@ -33,7 +33,6 @@ public class BufferPool {
     //map page ID to page
     private ConcurrentHashMap<PageId, Page> pid2page;
     private ConcurrentHashMap<PageId, Permissions> pid2perm;
-
     private ConcurrentHashMap<PageId,TransactionId> pid2tid;
 
     /**
@@ -82,7 +81,7 @@ public class BufferPool {
         throws TransactionAbortedException, DbException {
         // some code goes here
 
-        //lock()
+        //According to the instruction manual, lab1 doesn't need lock function
 
         if(pid2page.containsKey(pid)){
             return pid2page.get(pid);
@@ -90,7 +89,7 @@ public class BufferPool {
 
         Page newPage = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
         if(pid2page.size()>NUM_PAGES){
-            evictPage();
+            throw new DbException("The bufferpool is full!");
         }
         pid2page.put(pid,newPage);
         pid2perm.put(pid,perm);
