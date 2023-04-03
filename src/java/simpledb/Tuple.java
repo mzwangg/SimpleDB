@@ -136,4 +136,18 @@ public class Tuple implements Serializable {
         // some code goes here
         tupleDesc = new TupleDesc(td.getTdAr());
     }
+
+    public static Tuple merge(TupleDesc td,Tuple left,Tuple right)
+    {
+        Tuple result=new Tuple(td);
+        int leftLenth=left.getTupleDesc().numFields();
+        int rightLenth=right.getTupleDesc().numFields();
+        for (int i = 0; i < leftLenth; i++) {
+            result.setField(i, left.getField(i));
+        }
+        for (int i = 0; i < rightLenth; i++) {
+            result.setField(i+leftLenth , right.getField(i));
+        }
+        return result;
+    }
 }
