@@ -1,11 +1,27 @@
 package simpledb;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Knows how to compute some aggregate over a set of StringFields.
  */
 public class StringAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
+
+    private final int gbFieldIndex;
+
+    private final Type gbFieldType;
+
+    private final int aFieldIndex;
+
+    private final Op what;
+
+    private TupleDesc td;
+
+    HashMap<Field, Integer> gbField2agVal;
 
     /**
      * Aggregate constructor
@@ -18,6 +34,15 @@ public class StringAggregator implements Aggregator {
 
     public StringAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
         // some code goes here
+        if(what!=Op.COUNT) {
+            throw new IllegalArgumentException();
+        }
+
+        this.gbFieldIndex=gbfield;
+        this.gbFieldType=gbfieldtype;
+        this.aFieldIndex=afield;
+        this.what=what;
+        this.gbField2agVal=new HashMap<>();
     }
 
     /**
@@ -26,6 +51,31 @@ public class StringAggregator implements Aggregator {
      */
     public void mergeTupleIntoGroup(Tuple tup) {
         // some code goes here
+
+        Field gbField=null;
+
+        //The input Tuple's TupleDesc must equal this.td
+        if (td == null) {
+            td = tup.getTupleDesc();
+        }
+
+        if (!td.equals(tup.getTupleDesc())) {
+            throw new IllegalArgumentException();
+        }
+
+        if (this.gbFieldIndex != Aggregator.NO_GROUPING) {
+            gbField = tup.getField(gbFieldIndex);
+        }
+
+        if (tup.getField(this.aFieldIndex).getType() != Type.STRING_TYPE) {
+            throw new IllegalArgumentException();
+        }
+
+        if (gbField2agVal.containsKey(gbField)) {
+            gbField2agVal.put(gbField, gbField2agVal.get(gbField)+1);
+        } else {
+            gbField2agVal.put(gbField, 1);
+        }
     }
 
     /**
@@ -38,7 +88,23 @@ public class StringAggregator implements Aggregator {
      */
     public OpIterator iterator() {
         // some code goes here
-        throw new UnsupportedOperationException("please implement me for lab2");
+        ArrayList<Tuple> tuples = new ArrayList<>();
+        TupleDesc iteratorTd=new TupleDesc(new Type[]{gbFieldType, Type.INT_TYPE});
+        if (gbFieldIndex == Aggregator.NO_GROUPING){
+            for (Map.Entry<Field, Integer> item : gbField2agVal.entrySet()) {
+                Tuple tuple = new Tuple(iteratorTd);
+                tuple.setField(0, new IntField(item.getValue()));
+                tuples.add(tuple);
+            }
+        }else{
+            for (Map.Entry<Field, Integer> item : gbField2agVal.entrySet()) {
+                Tuple tuple = new Tuple(iteratorTd);
+                tuple.setField(0, item.getKey());
+                tuple.setField(1, new IntField(item.getValue()));
+                tuples.add(tuple);
+            }
+        }
+        return new TupleIterator(iteratorTd, tuples);
     }
 
 }
