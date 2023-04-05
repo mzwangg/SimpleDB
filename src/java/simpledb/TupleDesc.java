@@ -224,7 +224,7 @@ public class TupleDesc implements Serializable {
             }
 
             for (int i = 0; i < fildsNum; i++) {
-                if (tdAr.get(i).fieldName != other.tdAr.get(i).fieldName) {
+                if (tdAr.get(i).fieldType != other.tdAr.get(i).fieldType) {
                     return false;
                 }
             }

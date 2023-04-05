@@ -129,22 +129,24 @@ public class IntegerAggregator implements Aggregator {
     public OpIterator iterator() {
         // some code goes here
         ArrayList<Tuple> tuples = new ArrayList<>();
-        TupleDesc iteratorTd=new TupleDesc(new Type[]{gbFieldType, Type.INT_TYPE});
         if (gbFieldIndex == Aggregator.NO_GROUPING){
+            TupleDesc iteratorTd=new TupleDesc(new Type[]{Type.INT_TYPE});
             for (Map.Entry<Field, Integer> item : gbField2agVal.entrySet()) {
                 Tuple tuple = new Tuple(iteratorTd);
                 tuple.setField(0, new IntField(item.getValue()));
                 tuples.add(tuple);
             }
+            return new TupleIterator(iteratorTd, tuples);
         }else{
+            TupleDesc iteratorTd=new TupleDesc(new Type[]{gbFieldType, Type.INT_TYPE});
             for (Map.Entry<Field, Integer> item : gbField2agVal.entrySet()) {
                 Tuple tuple = new Tuple(iteratorTd);
                 tuple.setField(0, item.getKey());
                 tuple.setField(1, new IntField(item.getValue()));
                 tuples.add(tuple);
             }
+            return new TupleIterator(iteratorTd, tuples);
         }
-        return new TupleIterator(iteratorTd, tuples);
     }
 
 }

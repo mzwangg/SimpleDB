@@ -54,11 +54,11 @@ public class Aggregate extends Operator {
         this.gbFieldIndex=gfield;
         this.aop=aop;
         this.child_td = child.getTupleDesc();
-        this.gbFieldType = (gfield == Aggregator.NO_GROUPING ? null : td.getFieldType(gfield));
+        this.gbFieldType = (gfield == Aggregator.NO_GROUPING ? null : child_td.getFieldType(gbFieldIndex));
 
         switch (child_td.getFieldType(afield)){
             case INT_TYPE -> this.aggregator = new IntegerAggregator(gfield, gbFieldType, afield, aop);
-            case STRING_TYPE -> this.aggregator = new IntegerAggregator(gfield, gbFieldType, afield, aop);
+            case STRING_TYPE -> this.aggregator = new StringAggregator(gfield, gbFieldType, afield, aop);
             default -> throw new IllegalArgumentException();
         }
         this.aggregateIterator=aggregator.iterator();
