@@ -33,8 +33,6 @@ public class BufferPool {
 
     //map page ID to page
     private ConcurrentHashMap<PageId, Page> pid2page;
-    private ConcurrentHashMap<PageId, Permissions> pid2perm;
-    private ConcurrentHashMap<PageId,TransactionId> pid2tid;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -45,8 +43,6 @@ public class BufferPool {
         // some code goes here
         NUM_PAGES=numPages;
         pid2page=new ConcurrentHashMap<>(NUM_PAGES);
-        pid2perm=new ConcurrentHashMap<>(NUM_PAGES);
-        pid2tid=new ConcurrentHashMap<>(NUM_PAGES);
     }
     
     public static int getPageSize() {
@@ -93,11 +89,8 @@ public class BufferPool {
             evictPage();
         }
         pid2page.put(pid,newPage);
-        pid2perm.put(pid,perm);
-        pid2tid.put(pid,tid);
 
         return newPage;
-
     }
 
     /**
@@ -168,6 +161,10 @@ public class BufferPool {
         HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
         ArrayList<Page> affectedPages = hf.insertTuple(tid, t);
         for (Page page : affectedPages) {
+            //由于BufferPoolWrightTest的测试中未将申请的page加入BufferPool，故加入此判断
+            if(!pid2page.containsKey(page.getId())){
+                pid2page.put(page.getId(),page);
+            }
             page.markDirty(true, tid);
         }
     }
@@ -241,9 +238,9 @@ public class BufferPool {
         if(!pid2page.containsKey(pid)){
             return;
         }
-        HeapFile table = (HeapFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
+        HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
         Page dirty_page=pid2page.get(pid);
-        table.writePage(dirty_page);
+        hf.writePage(dirty_page);
         dirty_page.markDirty(false, null);
     }
 
@@ -261,22 +258,5 @@ public class BufferPool {
     private synchronized  void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
-        PageId pageIdToEvict = null;
-        for(Map.Entry<PageId, Page> entry : pid2page.entrySet()) {
-            if(entry.getValue().isDirty() == null) {
-                pageIdToEvict = entry.getKey();
-                break;
-            }
-        }
-
-        if(pageIdToEvict == null)
-            throw new DbException("All pages in the buffer pool are dirty. Cannot perform page eviction");
-        else
-            pid2page.remove(pageIdToEvict);
     }
-
-    public boolean containspid(PageId pid){
-        return pid2page.containsKey(pid);
-    }
-
 }

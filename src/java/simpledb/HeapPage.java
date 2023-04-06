@@ -279,9 +279,9 @@ public class HeapPage implements Page {
 
         for (int i = 8*headerIndex; i < numTuples; i++) {
             if (!isSlotUsed(i)) {
+                t.setRecordId(new RecordId(pid, i));
                 tuples[i] = t;
                 markSlotUsed(i, true);
-                t.setRecordId(new RecordId(pid, i));
                 return;
             }
         }

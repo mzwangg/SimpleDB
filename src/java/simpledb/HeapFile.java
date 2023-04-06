@@ -23,8 +23,6 @@ public class HeapFile implements DbFile {
 
     private File file;
 
-    private int numPage;
-
     /**
      * Constructs a heap file backed by the specified file.
      *
@@ -35,7 +33,6 @@ public class HeapFile implements DbFile {
         // some code goes here
         file = f;
         tupleDesc = td;
-        numPage = (int) (file.length() / BufferPool.getPageSize());
     }
 
     /**
@@ -94,6 +91,14 @@ public class HeapFile implements DbFile {
     public void writePage(Page page) throws IOException {
         // some code goes here
         // not necessary for lab1
+        byte[]data = page.getPageData();
+        try (RandomAccessFile raf = new RandomAccessFile(getFile(), "rw")) {
+            int pos = page.getId().getPageNumber() * BufferPool.getPageSize();
+            raf.seek(pos);
+            raf.write(data);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -101,7 +106,7 @@ public class HeapFile implements DbFile {
      */
     public int numPages() {
         // some code goes here
-        return numPage;
+        return (int) Math.ceil(file.length() / BufferPool.getPageSize());
     }
 
     // see DbFile.java for javadocs
@@ -137,7 +142,6 @@ public class HeapFile implements DbFile {
             HeapPageId newPid = new HeapPageId(getId(), numPages());
             HeapPage newDiskPage = new HeapPage(newPid, HeapPage.createEmptyPageData());
             writePage(newDiskPage);
-            numPage++;
             HeapPage newPage = (HeapPage) Database.getBufferPool().getPage(tid, newPid, Permissions.READ_WRITE);
             newPage.insertTuple(t);
             newPage.markDirty(true, tid);
