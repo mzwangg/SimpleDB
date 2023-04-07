@@ -34,6 +34,8 @@ public class BufferPool {
     //map page ID to page
     private ConcurrentHashMap<PageId, Page> pid2page;
 
+    private BufferPoolList bufferPoolList;
+
     /**
      * Creates a BufferPool that caches up to numPages pages.
      *
@@ -41,8 +43,9 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         // some code goes here
-        NUM_PAGES=numPages;
-        pid2page=new ConcurrentHashMap<>(NUM_PAGES);
+        this.NUM_PAGES=numPages;
+        this.pid2page=new ConcurrentHashMap<>(NUM_PAGES);
+        this.bufferPoolList=new BufferPoolList(numPages,0.7,100);
     }
     
     public static int getPageSize() {
@@ -85,10 +88,14 @@ public class BufferPool {
         }
 
         Page newPage = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+
+        //先将页面加入，如果超过了缓冲池的容量再删去
+        bufferPoolList.push(pid);
+        pid2page.put(pid,newPage);
+
         if(pid2page.size()>NUM_PAGES){
             evictPage();
         }
-        pid2page.put(pid,newPage);
 
         return newPage;
     }
@@ -218,12 +225,14 @@ public class BufferPool {
         Also used by B+ tree files to ensure that deleted pages
         are removed from the cache so they can be reused safely
     */
-    public synchronized void discardPage(PageId pid) throws IOException {
+    public synchronized void discardPage(PageId pid){
         // some code goes here
         // not necessary for lab1
+
+        //discardPage不flushPage，在输入页面为脏页面时报错
         Page page=pid2page.get(pid);
         if(page.isDirty()!=null){
-            flushPage(pid);
+            throw new IllegalArgumentException();
         }
         pid2page.remove(pid);
     }
@@ -232,14 +241,19 @@ public class BufferPool {
      * Flushes a certain page to disk
      * @param pid an ID indicating the page to flush
      */
-    private synchronized  void flushPage(PageId pid) throws IOException {
+    private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
-        if(!pid2page.containsKey(pid)){
+        if(pid==null||!pid2page.containsKey(pid)){
             return;
         }
-        HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
+
         Page dirty_page=pid2page.get(pid);
+        if(dirty_page.isDirty()==null){
+            return;
+        }
+
+        HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
         hf.writePage(dirty_page);
         dirty_page.markDirty(false, null);
     }
@@ -255,8 +269,18 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
+    private synchronized void evictPage() throws DbException {
         // some code goes here
         // not necessary for lab1
+        PageId evictPageId=bufferPoolList.evictPage();
+        if(evictPageId==null){
+            return;
+        }
+        try {
+            flushPage(evictPageId);
+        }catch (IOException e){
+            e.printStackTrace();
+        }
+        pid2page.remove(evictPageId);
     }
 }
