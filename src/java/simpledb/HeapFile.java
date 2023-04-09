@@ -91,7 +91,9 @@ public class HeapFile implements DbFile {
     public void writePage(Page page) throws IOException {
         // some code goes here
         // not necessary for lab1
-        byte[]data = page.getPageData();
+
+        //利用RandomAccessFile对磁盘文件进行写入
+        byte[] data = page.getPageData();
         try (RandomAccessFile raf = new RandomAccessFile(getFile(), "rw")) {
             int pos = page.getId().getPageNumber() * BufferPool.getPageSize();
             raf.seek(pos);
@@ -110,14 +112,15 @@ public class HeapFile implements DbFile {
     }
 
     // see DbFile.java for javadocs
+
     /**
      * Inserts the specified tuple to the file on behalf of transaction.
      * This method will acquire a lock on the affected pages of the file, and
      * may block until the lock can be acquired.
      *
      * @param tid The transaction performing the update
-     * @param t The tuple to add.  This tuple should be updated to reflect that
-     *          it is now stored in this file.
+     * @param t   The tuple to add.  This tuple should be updated to reflect that
+     *            it is now stored in this file.
      * @return An ArrayList contain the pages that were modified
      * @throws DbException if the tuple cannot be added
      * @throws IOException if the needed file can't be read/written
@@ -154,19 +157,18 @@ public class HeapFile implements DbFile {
     public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t) throws DbException,
             TransactionAbortedException {
         // some code goes here
+
+        //如果page的PgNo小于HeapFile的页面数，则说明含有这个页面
         PageId pid = t.getRecordId().getPageId();
         HeapPage modifiedPage = null;
-        for (int i = 0; i < numPages(); i++) {
-            if (i == pid.getPageNumber()) {
-                modifiedPage = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_WRITE);
-                modifiedPage.deleteTuple(t);
-                modifiedPage.markDirty(true, tid);
-                break;
-            }
-        }
-        if (modifiedPage == null) {
+        if (pid.getPageNumber() < numPages()) {
+            modifiedPage = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_WRITE);
+            modifiedPage.deleteTuple(t);
+            modifiedPage.markDirty(true, tid);
+        }else{
             throw new DbException("this tuple is not in the page it's recorded");
         }
+
         ArrayList<Page> modifiedPages = new ArrayList<>();
         modifiedPages.add(modifiedPage);
         return modifiedPages;

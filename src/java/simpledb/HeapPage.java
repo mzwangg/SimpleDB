@@ -15,13 +15,12 @@ public class HeapPage implements Page {
 
     final HeapPageId pid;
     final TupleDesc td;
-    final byte header[];
-    final Tuple tuples[];
+    final byte[] header;
+    final Tuple[] tuples;
     final int numSlots;
-    private TransactionId tidMakeDirty;
-
     private final Byte oldDataLock = new Byte((byte) 0);
     byte[] oldData;
+    private TransactionId tidMakeDirty;
 
     /**
      * Create a HeapPage from a set of bytes of data read from disk.
@@ -51,9 +50,9 @@ public class HeapPage implements Page {
         for (int i = 0; i < header.length; i++)
             header[i] = dis.readByte();
 
+        // allocate and read the actual records of this page
         tuples = new Tuple[numSlots];
         try {
-            // allocate and read the actual records of this page
             for (int i = 0; i < tuples.length; i++)
                 tuples[i] = readNextTuple(dis, i);
         } catch (NoSuchElementException e) {
@@ -251,6 +250,9 @@ public class HeapPage implements Page {
     public void deleteTuple(Tuple t) throws DbException {
         // some code goes here
         // not necessary for lab1
+
+        //如果该元组不属于该表或者该表不含该元组，则报错
+        //否则直接将对应的header设置为0，在逻辑上删除该元组
         RecordId tid = t.getRecordId();
         HeapPageId hpid = (HeapPageId) tid.getPageId();
         int tupleNum = tid.getTupleNumber();
@@ -273,11 +275,12 @@ public class HeapPage implements Page {
         // not necessary for lab1
         if (!td.equals(t.getTupleDesc())) throw new DbException("wrong tupleDesc!");
 
-        int headerIndex=-1;
-        int numTuples=getNumTuples();
-        while (header[++headerIndex]==(byte)0x11111111);
+        int headerIndex = -1;
+        int numTuples = getNumTuples();
+        while (header[++headerIndex] == (byte) 0x11111111) ;//以字节为单位快速定位空缺的header
 
-        for (int i = 8*headerIndex; i < numTuples; i++) {
+        //查找空缺header的空缺位置
+        for (int i = 8 * headerIndex; i < numTuples; i++) {
             if (!isSlotUsed(i)) {
                 t.setRecordId(new RecordId(pid, i));
                 tuples[i] = t;
@@ -336,9 +339,11 @@ public class HeapPage implements Page {
     private void markSlotUsed(int i, boolean value) {
         // some code goes here
         // not necessary for lab1
-        if(value){
+
+        //通过位运算实现对二进制位的操纵
+        if (value) {
             header[i / 8] |= (1 << (i & 0x07));
-        }else{
+        } else {
             header[i / 8] &= ~(1 << (i & 0x07));
         }
     }
