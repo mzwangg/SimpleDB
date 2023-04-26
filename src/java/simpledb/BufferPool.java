@@ -88,13 +88,14 @@ public class BufferPool {
 
         Page newPage = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
 
+        //若加入后会超过缓冲区容量，则删去
+        if (pid2page.size() >= NUM_PAGES) {
+            evictPage();
+        }
+
         //先将页面加入，如果超过了缓冲池的容量再删去
         bufferPoolList.push(pid);
         pid2page.put(pid, newPage);
-
-        if (pid2page.size() > NUM_PAGES) {
-            evictPage();
-        }
 
         return newPage;
     }
