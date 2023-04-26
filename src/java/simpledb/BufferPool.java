@@ -167,7 +167,7 @@ public class BufferPool {
         // not necessary for lab1
 
         //将Tuple插入HeapFile并将影响的表设置为dirty
-        HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile hf = (DbFile) Database.getCatalog().getDatabaseFile(tableId);
         ArrayList<Page> affectedPages = hf.insertTuple(tid, t);
         for (Page page : affectedPages) {
             //由于BufferPoolWrightTest的测试中未将申请的page加入BufferPool，故加入此判断
@@ -197,7 +197,7 @@ public class BufferPool {
         // not necessary for lab1
 
         int tableId = t.getRecordId().getPageId().getTableId();
-        HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile hf = (DbFile) Database.getCatalog().getDatabaseFile(tableId);
         ArrayList<Page> affectedPages = hf.deleteTuple(tid, t);
         for (Page page : affectedPages) {
             page.markDirty(true, tid);
@@ -234,6 +234,9 @@ public class BufferPool {
 
         //discardPage不flushPage，在输入页面为脏页面时报错
         Page page = pid2page.get(pid);
+        if(page == null ){
+            return;
+        }
         if (page.isDirty() != null) {
             throw new IllegalArgumentException();
         }
@@ -257,7 +260,7 @@ public class BufferPool {
             return;
         }
 
-        HeapFile hf = (HeapFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
+        DbFile hf = (DbFile) Database.getCatalog().getDatabaseFile(pid.getTableId());
         hf.writePage(dirty_page);
         dirty_page.markDirty(false, null);
     }

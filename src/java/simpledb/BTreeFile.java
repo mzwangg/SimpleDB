@@ -263,8 +263,38 @@ public class BTreeFile implements DbFile {
         // the new entry.  getParentWithEmtpySlots() will be useful here.  Don't forget to update
         // the sibling pointers of all the affected leaf pages.  Return the page into which a
         // tuple with the given key field should be inserted.
-        return null;
 
+        BTreeLeafPage rightPage = (BTreeLeafPage) getEmptyPage(tid, dirtypages, BTreePageId.LEAF);
+        Iterator<Tuple> tuples = page.reverseIterator();
+
+        //将溢出页面的后二分之一个元组移到rightPage中
+        //不需要按照顺序插入，因为insertTuple内部保证了元组的有序性
+        for(int i=page.getNumTuples()/2; i>0; i--)
+        {
+            Tuple tuple = tuples.next();
+            page.deleteTuple(tuple);
+            rightPage.insertTuple(tuple);
+        }
+
+        //将新节点与左右节点连接起来
+        if(page.getRightSiblingId() != null)
+        {
+            BTreePageId oldRightId = page.getRightSiblingId();
+            BTreeLeafPage oldRightPage = (BTreeLeafPage) getPage(tid, dirtypages, oldRightId, Permissions.READ_WRITE);
+            oldRightPage.setLeftSiblingId(rightPage.getId());
+        }
+        rightPage.setLeftSiblingId(page.getId());
+        rightPage.setRightSiblingId(page.getRightSiblingId());
+        page.setRightSiblingId(rightPage.getId());
+
+        //根据右边页面的第一个tuple的key生成entry并加入父节点
+        Field index = rightPage.iterator().next().getField(keyField);
+        BTreeEntry entry = new BTreeEntry(index, page.getId(), rightPage.getId());
+        BTreeInternalPage parentPage = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), index);
+        parentPage.insertEntry(entry);
+        updateParentPointers(tid, dirtypages, parentPage);//更新父指针
+
+        return (field.compare(Op.GREATER_THAN_OR_EQ, index)? rightPage:page);
     }
 
     /**
@@ -300,7 +330,34 @@ public class BTreeFile implements DbFile {
         // the parent pointers of all the children moving to the new page.  updateParentPointers()
         // will be useful here.  Return the page into which an entry with the given key field
         // should be inserted.
-        return null;
+
+        BTreeInternalPage rightPage = (BTreeInternalPage) getEmptyPage(tid, dirtypages, BTreePageId.INTERNAL);
+        Iterator<BTreeEntry> entrys = page.reverseIterator();
+        if(entrys == null || !entrys.hasNext())
+            throw new DbException("Internal Page has no entry!");
+
+        //将溢出页面的后二分之一个entry移到rightPage中
+        //由于在插入时会检查该entry是否在其他页面中存在,因此必须先删除后添加
+        for(int i=page.getNumEntries()/2; i>0; i--)
+        {
+            BTreeEntry entry = entrys.next();
+            page.deleteKeyAndRightChild(entry);
+            rightPage.insertEntry(entry);
+        }
+
+        //删除左边页面的最后一个entry，并加入父节点
+        BTreeEntry e = entrys.next();
+        Field index = e.getKey();
+        page.deleteKeyAndRightChild(e);
+        BTreeEntry newEntry = new BTreeEntry(index, page.getId(), rightPage.getId());
+        BTreeInternalPage parentPage = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), index);
+        parentPage.insertEntry(newEntry);
+
+        //更新父指针
+        updateParentPointers(tid, dirtypages, parentPage);
+        updateParentPointers(tid, dirtypages, rightPage);
+
+        return field.compare(Op.GREATER_THAN_OR_EQ, index)? rightPage:page;
     }
 
     /**

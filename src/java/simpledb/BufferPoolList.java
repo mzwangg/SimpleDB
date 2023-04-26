@@ -60,7 +60,7 @@ public class BufferPoolList {
 
     //插入页面
     public void push(PageId pid) {
-        if (size < MAX_SIZE) {//当页面未满时
+        if (size < MAX_SIZE - 1) {//当页面未满时
             if (pid2node.containsKey(pid)) {//若存在该页面则直接移动到新生代头部
                 moveNode2Front(pid2node.get(pid));
             } else {//否则在新生代头部插入一个新页面
