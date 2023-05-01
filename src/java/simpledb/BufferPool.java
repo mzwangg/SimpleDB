@@ -232,13 +232,18 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
 
-        //discardPage不flushPage，在输入页面为脏页面时报错
         Page page = pid2page.get(pid);
         if(page == null ){
             return;
         }
+
+        //在输入页面为脏页面时更新页面
         if (page.isDirty() != null) {
-            throw new IllegalArgumentException();
+            try{
+                flushPage(page.getId());
+            }catch(IOException e){
+                e.printStackTrace();
+            }
         }
         pid2page.remove(pid);
     }
