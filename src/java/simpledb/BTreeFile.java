@@ -196,6 +196,7 @@ public class BTreeFile implements DbFile {
             return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
         }
 
+        //得到该节点entry的迭代器
         BTreeInternalPage page = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, perm);
         Iterator<BTreeEntry> entries = page.iterator();
 
@@ -207,7 +208,7 @@ public class BTreeFile implements DbFile {
         while (true) {
             BTreeEntry entry = entries.next();
             if (entry.getKey().compare(Op.GREATER_THAN_OR_EQ, f)) {
-                //当前节点键值大于查找键值时在左子节点继续查找
+                //当前节点键值大于等于查找键值时在左子节点继续查找
                 return findLeafPage(tid, dirtypages, entry.getLeftChild(), perm, f);
             }else if(!entries.hasNext()){
                 //当左边的entry的键值都小于查找键值时在最后一个entry的右子节点继续查找
@@ -231,6 +232,66 @@ public class BTreeFile implements DbFile {
                                Field f)
             throws DbException, TransactionAbortedException {
         return findLeafPage(tid, new HashMap<PageId, Page>(), pid, perm, f);
+    }
+
+    /**
+     * Recursive function which finds and locks the leaf page in the B+ tree corresponding to
+     * the left-most page possibly containing the key field f. It locks all internal
+     * nodes along the path to the leaf node with READ_ONLY permission, and locks the
+     * leaf node with permission perm.
+     * <p>
+     * If f is null, it finds the left-most leaf page -- used for the iterator
+     *
+     * @param tid        - the transaction id
+     * @param dirtypages - the list of dirty pages which should be updated with all new dirty pages
+     * @param pid        - the current page being searched
+     * @param perm       - the permissions with which to lock the leaf page
+     * @param f          - the field to search for
+     * @return the left-most leaf page possibly containing the key field f
+     */
+    private BTreeLeafPage findReverseLeafPage(TransactionId tid, HashMap<PageId, Page> dirtypages, BTreePageId pid, Permissions perm,
+                                              Field f) throws DbException, TransactionAbortedException {
+        if (pid.pgcateg() == BTreePageId.LEAF) {
+            //当为叶节点时直接返回
+            return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
+        }
+
+        //得到该节点entry的反向迭代器
+        BTreeInternalPage page = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, perm);
+        Iterator<BTreeEntry> entries = page.reverseIterator();
+
+        if (f == null) {
+            //查找空值时返回最右边的叶节点
+            return findReverseLeafPage(tid, dirtypages, entries.next().getRightChild(), perm, f);
+        }
+
+        while (true) {
+            BTreeEntry entry = entries.next();
+            if (entry.getKey().compare(Op.LESS_THAN_OR_EQ, f)) {
+                //当前节点键值小于等于查找键值时在右子节点继续查找
+                return findReverseLeafPage(tid, dirtypages, entry.getRightChild(), perm, f);
+            }else if(!entries.hasNext()){
+                //当右边的entry的键值都大于查找键值时在第一个entry的左子节点继续查找
+                return findReverseLeafPage(tid, dirtypages, entry.getLeftChild(), perm, f);
+            }
+        }
+    }
+
+    /**
+     * Convenience method to find a leaf page when there is no dirtypages HashMap.
+     * Used by the BTreeFile iterator.
+     *
+     * @param tid  - the transaction id
+     * @param pid  - the current page being searched
+     * @param perm - the permissions with which to lock the leaf page
+     * @param f    - the field to search for
+     * @return the left-most leaf page possibly containing the key field f
+     * @see #findLeafPage(TransactionId, HashMap, BTreePageId, Permissions, Field)
+     */
+    BTreeLeafPage findReverseLeafPage(TransactionId tid, BTreePageId pid, Permissions perm,
+                                      Field f)
+            throws DbException, TransactionAbortedException {
+        return findReverseLeafPage(tid, new HashMap<PageId, Page>(), pid, perm, f);
     }
 
     /**
@@ -1219,6 +1280,16 @@ public class BTreeFile implements DbFile {
         return new BTreeFileIterator(this, tid);
     }
 
+    //得到满足某个谓词的反向迭代器
+    public DbFileIterator indexReverseIterator(TransactionId tid, IndexPredicate ipred) {
+        return new BTreeSearchReverseIterator(this, tid, ipred);
+    }
+
+    //得到反向迭代器
+    public DbFileIterator reverseIterator(TransactionId tid) {
+        return new BTreeFileReverseIterator(this, tid);
+    }
+
 }
 
 /**
@@ -1301,10 +1372,6 @@ class BTreeFileIterator extends AbstractDbFileIterator {
     }
 }
 
-/**
- * Helper class that implements the DbFileIterator for search tuples on a
- * B+ Tree File
- */
 class BTreeSearchIterator extends AbstractDbFileIterator {
 
     Iterator<Tuple> it = null;
@@ -1396,6 +1463,151 @@ class BTreeSearchIterator extends AbstractDbFileIterator {
     /**
      * close the iterator
      */
+    public void close() {
+        super.close();
+        it = null;
+    }
+}
+
+//反向迭代器类
+class BTreeFileReverseIterator extends AbstractDbFileIterator {
+
+    Iterator<Tuple> it = null;
+    BTreeLeafPage curp = null;
+
+    TransactionId tid;
+    BTreeFile f;
+
+    //构造函数，记录下BTreeFile和TransactionId
+    public BTreeFileReverseIterator(BTreeFile f, TransactionId tid) {
+        this.f = f;
+        this.tid = tid;
+    }
+
+    //通过给迭代器it赋值为最后一个叶节点的反向迭代器来初始化迭代器
+    public void open() throws DbException, TransactionAbortedException {
+        BTreeRootPtrPage rootPtr = (BTreeRootPtrPage) Database.getBufferPool().getPage(
+                tid, BTreeRootPtrPage.getId(f.getId()), Permissions.READ_ONLY);
+        BTreePageId root = rootPtr.getRootId();
+        curp = f.findReverseLeafPage(tid, root, Permissions.READ_ONLY, null);
+        it = curp.reverseIterator();
+    }
+
+    @Override
+    protected Tuple readNext() throws TransactionAbortedException, DbException {
+        //当it存在但是已遍历完该页面时将it置空
+        if (it != null && !it.hasNext())
+            it = null;
+
+        //不断遍历，直到找到可用的页面的迭代器或遍历完所有页面
+        while (it == null && curp != null) {
+            BTreePageId nextp = curp.getLeftSiblingId();
+            if (nextp == null) {
+                curp = null;//当页面没有左兄弟时说明遍历结束
+            } else {
+                curp = (BTreeLeafPage) Database.getBufferPool().getPage(tid,
+                        nextp, Permissions.READ_ONLY);//若含有左兄弟，则读取
+                it = curp.reverseIterator();//得到该页面的反向迭代器
+                if (!it.hasNext())
+                    it = null;//若该页面不含元素，则继续遍历下一页面
+            }
+        }
+
+        //此时it==null说明已经遍历完所有叶子结点，返回null
+        if (it == null)
+            return null;
+
+        //此时it已经含有下一元素，直接调用next方法
+        return it.next();
+    }
+
+    //重置迭代器
+    public void rewind() throws DbException, TransactionAbortedException {
+        close();
+        open();
+    }
+
+    //关闭迭代器
+    public void close() {
+        super.close();
+        it = null;
+        curp = null;
+    }
+}
+
+//满足某个谓词的反向迭代器类
+class BTreeSearchReverseIterator extends AbstractDbFileIterator {
+
+    Iterator<Tuple> it = null;
+    BTreeLeafPage curp = null;
+
+    TransactionId tid;
+    BTreeFile f;
+    IndexPredicate ipred;
+
+    //构造函数
+    public BTreeSearchReverseIterator(BTreeFile f, TransactionId tid, IndexPredicate ipred) {
+        this.f = f;
+        this.tid = tid;
+        this.ipred = ipred;
+    }
+
+    //通过给迭代器it赋值为最后一个叶节点的反向迭代器来初始化迭代器
+    public void open() throws DbException, TransactionAbortedException {
+        BTreeRootPtrPage rootPtr = (BTreeRootPtrPage) Database.getBufferPool().getPage(
+                tid, BTreeRootPtrPage.getId(f.getId()), Permissions.READ_ONLY);
+        BTreePageId root = rootPtr.getRootId();
+        if (ipred.getOp() == Op.EQUALS || ipred.getOp() == Op.LESS_THAN
+                || ipred.getOp() == Op.LESS_THAN_OR_EQ) {
+            curp = f.findReverseLeafPage(tid, root, Permissions.READ_ONLY, ipred.getField());
+        } else {
+            curp = f.findReverseLeafPage(tid, root, Permissions.READ_ONLY, null);
+        }
+        it = curp.reverseIterator();
+    }
+
+    //读取下一个元组
+    @Override
+    protected Tuple readNext() throws TransactionAbortedException, DbException,
+            NoSuchElementException {
+        while (it != null) {
+            while (it.hasNext()) {
+                Tuple t = it.next();
+                if (t.getField(f.keyField()).compare(ipred.getOp(), ipred.getField())) {
+                    return t;//如果元组满足条件，则直接返回该元组
+                } else if (ipred.getOp() == Op.GREATER_THAN || ipred.getOp() == Op.GREATER_THAN_OR_EQ) {
+                    //假如元组不满足大于或大于等于，说明可以结束了
+                    return null;
+                } else if (ipred.getOp() == Op.EQUALS &&
+                        t.getField(f.keyField()).compare(Op.LESS_THAN_OR_EQ, ipred.getField())) {
+                    //假如元组不满足等于、小于或小于等于，说明可以结束了
+                    return null;
+                }
+            }
+
+            //读取完当前页面后，读取左兄弟
+            BTreePageId nextp = curp.getLeftSiblingId();
+
+            //如果没有左兄弟，则结束；否则在左兄弟页面继续读取
+            if (nextp == null) {
+                return null;
+            } else {
+                curp = (BTreeLeafPage) Database.getBufferPool().getPage(tid,
+                        nextp, Permissions.READ_ONLY);
+                it = curp.reverseIterator();
+            }
+        }
+
+        return null;
+    }
+
+    //重置迭代器
+    public void rewind() throws DbException, TransactionAbortedException {
+        close();
+        open();
+    }
+
+    //关闭迭代器
     public void close() {
         super.close();
         it = null;
