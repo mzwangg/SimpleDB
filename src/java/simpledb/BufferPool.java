@@ -26,14 +26,13 @@ public class BufferPool {
      * Bytes per page, including header.
      */
     private static final int DEFAULT_PAGE_SIZE = 4096;
+    private final long WAIT_TIME = 10;
     private static int pageSize = DEFAULT_PAGE_SIZE;
-    //max number of pages
     public final int NUM_PAGES;
 
-    //map page ID to page
     private ConcurrentHashMap<PageId, Page> pid2page;
-
     private BufferPoolList bufferPoolList;
+    private LockManager lockManager;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -45,6 +44,7 @@ public class BufferPool {
         this.NUM_PAGES = numPages;
         this.pid2page = new ConcurrentHashMap<>(NUM_PAGES);
         this.bufferPoolList = new BufferPoolList(numPages, 0.7, 100);
+        this.lockManager = new LockManager();
     }
 
     public static int getPageSize() {
@@ -80,7 +80,14 @@ public class BufferPool {
             throws TransactionAbortedException, DbException {
         // some code goes here
 
-        //According to the instruction manual, lab1 doesn't need lock function
+        //sleep之后再次判断是否获取到锁
+        while (!lockManager.acquireLock(pid,tid,perm==Permissions.READ_ONLY)) {
+            try {
+                Thread.sleep(WAIT_TIME);
+            }catch(InterruptedException ex){
+                throw new TransactionAbortedException();
+            }
+        }
 
         if (pid2page.containsKey(pid)) {
             return pid2page.get(pid);
@@ -93,7 +100,7 @@ public class BufferPool {
             evictPage();
         }
 
-        //先将页面加入，如果超过了缓冲池的容量再删去
+        //将页面加入缓冲行列表
         bufferPoolList.push(pid);
         pid2page.put(pid, newPage);
 
@@ -112,6 +119,7 @@ public class BufferPool {
     public void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
+        lockManager.releaseLock(pid,tid);
     }
 
     /**
@@ -233,15 +241,15 @@ public class BufferPool {
         // not necessary for lab1
 
         Page page = pid2page.get(pid);
-        if(page == null ){
+        if (page == null) {
             return;
         }
 
         //在输入页面为脏页面时更新页面
         if (page.isDirty() != null) {
-            try{
+            try {
                 flushPage(page.getId());
-            }catch(IOException e){
+            } catch (IOException e) {
                 e.printStackTrace();
             }
         }
