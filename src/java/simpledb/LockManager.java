@@ -66,7 +66,7 @@ public class LockManager {
         ConcurrentHashMap<TransactionId, Lock> lockMap = pageMap.get(pid);
 
         //事务有锁时，删去
-        if (lockMap.contains(tid)) {
+        if (lockMap.containsKey(tid)) {
             lockMap.remove(tid);
             return true;
         }
