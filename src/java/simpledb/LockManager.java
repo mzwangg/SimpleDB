@@ -1,5 +1,6 @@
 package simpledb;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class LockManager {
@@ -77,6 +78,12 @@ public class LockManager {
     public synchronized boolean holdsLock(PageId pid, TransactionId tid) {
         //根据当前有无页面锁以及事务锁判断
         return pageMap.containsKey(pid) && pageMap.get(pid).containsKey(tid);
+    }
+
+    public synchronized void transactionComplete(TransactionId tid){
+        for(ConcurrentHashMap<TransactionId, Lock> lockMap:pageMap.values()){
+            lockMap.remove(tid);
+        }
     }
 
     public class Lock {

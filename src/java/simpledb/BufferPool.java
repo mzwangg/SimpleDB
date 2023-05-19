@@ -107,6 +107,15 @@ public class BufferPool {
         return newPage;
     }
 
+    //用来判断已经缓存到bufferPool中的页面是否为dirty
+    public boolean bufferPageisDirty(PageId pid) throws IOException{
+        if(!pid2page.containsKey(pid)){
+            throw new IOException();
+        }
+
+        return pid2page.get(pid).isDirty()!=null;
+    }
+
     /**
      * Releases the lock on a page.
      * Calling this is very risky, and may result in wrong behavior. Think hard
@@ -130,6 +139,7 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        lockManager.transactionComplete(tid);
     }
 
     /**
@@ -294,16 +304,9 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
 
-        //bufferPoolList首先驱逐一个页面并返回驱逐的PageID，然后先将页面flush到磁盘再在缓冲池中删去页面
+        //驱逐一个不是脏页面的页面
         PageId evictPageId = bufferPoolList.evictPage();
-        if (evictPageId == null) {
-            return;
-        }
-        try {
-            flushPage(evictPageId);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        if(evictPageId==null) return;
         pid2page.remove(evictPageId);
     }
 }

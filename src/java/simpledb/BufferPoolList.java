@@ -1,5 +1,6 @@
 package simpledb;
 
+import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class BufferPoolList {
@@ -22,40 +23,54 @@ public class BufferPoolList {
         this.pid2node = new ConcurrentHashMap<>();
     }
 
-    //将某节点移动到新生代头部
-    public void moveNode2Front(BufferPoolListNode node) {
+    public void popNode(BufferPoolListNode node) {
         if (node.prev != null) {
             node.prev.next = node.next;
+        }else{
+            front=node.next;
         }
+
         if (node.next != null) {
             node.next.prev = node.prev;
         }
+
+        if(node==middle){
+            middle=node.next;
+        }
+
         if (node == tail) {
             tail = node.prev;
+        }
+
+        --size;
+    }
+
+    //将某节点移动到新生代头部
+    public void moveNode2Front(BufferPoolListNode node) {
+        popNode(node);
+
+        //如果为真，则说明node为middle节点，如果不更改middle而直接将middle添加进头部的话会使新生代节点数变多
+        if(node.next==middle){
+            middle=middle.prev;
         }
 
         node.prev = null;
         node.next = front;
         front = node;
+        ++size;
     }
 
     //将某节点移动到老生代头部
     public void moveNode2Middle(BufferPoolListNode node) {
-        if (node.prev != null) {
-            node.prev.next = node.next;
-        }
-        if (node.next != null) {
-            node.next.prev = node.prev;
-        }
-        if (node == tail) {
-            tail = node.prev;
-        }
+        popNode(node);
 
         node.prev = middle.prev;
         middle.prev.next = node;
         node.next = middle;
         middle.prev = node;
         middle = node;
+
+        ++size;
     }
 
     //插入页面
@@ -106,14 +121,25 @@ public class BufferPoolList {
     }
 
     //每次驱逐时都驱逐尾节点，当BufferPool未满时尾节点还不存在
-    public PageId evictPage() {
+    public PageId evictPage() throws DbException{
         if (tail == null) {
             return null;
         }
-        PageId evictPageId = tail.pid;
-        tail = tail.prev;
-        tail.next = null;
-        --size;
+
+        BufferPoolListNode node=tail;
+        try {
+            while(Database.getBufferPool().bufferPageisDirty(node.pid)){//从后往前遍历，直到找到一个不是脏页面的页面
+                node=node.prev;
+                if(node==null){//当遍历到null还没找到，说明全为脏页面
+                    throw new DbException("All pages are dirty!");
+                }
+            }
+        }catch (IOException e){
+            e.printStackTrace();
+        }
+
+        PageId evictPageId = node.pid;
+        popNode(node);
         return evictPageId;
     }
 
