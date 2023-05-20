@@ -186,9 +186,6 @@ public class HeapFile implements DbFile {
             public void open() throws DbException, TransactionAbortedException {
                 pagePos = 0;
                 HeapPageId pid = new HeapPageId(getId(), pagePos);
-                HeapPage a=(HeapPage) Database.getBufferPool()
-                        .getPage(tid, pid, Permissions.READ_ONLY);
-                Object b=a.iterator();
                 tupleIterator = ((HeapPage) Database.getBufferPool()
                         .getPage(tid, pid, Permissions.READ_ONLY)).iterator();
             }

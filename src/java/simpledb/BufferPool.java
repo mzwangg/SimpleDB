@@ -27,6 +27,7 @@ public class BufferPool {
      */
     private static final int DEFAULT_PAGE_SIZE = 4096;
     private final long WAIT_TIME = 10;
+    private final long MAX_WAIT_TIME = 3000;
     private static int pageSize = DEFAULT_PAGE_SIZE;
     public final int NUM_PAGES;
 
@@ -81,30 +82,33 @@ public class BufferPool {
         // some code goes here
 
         //sleep之后再次判断是否获取到锁
+        long time=0;
         while (!lockManager.acquireLock(pid,tid,perm==Permissions.READ_ONLY)) {
             try {
-                Thread.sleep(WAIT_TIME);
+                Thread.sleep(WAIT_TIME);//没成功请求到页面时等待WAIT_TIME毫秒继续请求
+                time+=WAIT_TIME;
             }catch(InterruptedException ex){
                 throw new TransactionAbortedException();
             }
+            if(time>MAX_WAIT_TIME){//若请求总时间超过设定时间则报错
+                throw new DbException("wait too long!");
+            }
         }
 
+        Page page;
         if (pid2page.containsKey(pid)) {
-            return pid2page.get(pid);
+            page = pid2page.get(pid);
+        }else{
+            if(pid2page.size() >= NUM_PAGES) {
+                evictPage();
+            }
+            page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+            pid2page.put(pid, page);
         }
 
-        Page newPage = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
-
-        //若加入后会超过缓冲区容量，则删去
-        if (pid2page.size() >= NUM_PAGES) {
-            evictPage();
-        }
-
-        //将页面加入缓冲行列表
+        //将页面加入缓冲列表，如果已经含有该页面则会更新其位置
         bufferPoolList.push(pid);
-        pid2page.put(pid, newPage);
-
-        return newPage;
+        return page;
     }
 
     //用来判断已经缓存到bufferPool中的页面是否为dirty
@@ -139,7 +143,7 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-        lockManager.transactionComplete(tid);
+        transactionComplete(tid,true);
     }
 
     /**
@@ -162,6 +166,26 @@ public class BufferPool {
             throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        if (commit) {
+            flushPages(tid);
+        } else {
+            rollBackPages(tid);
+        }
+        lockManager.transactionComplete(tid);
+    }
+
+    //在需要回滚时，将页面恢复到原本的image
+    public synchronized void rollBackPages(TransactionId tid) {
+        for (PageId pid : pid2page.keySet()) {
+            Page page = pid2page.get(pid);
+            if (page.isDirty() == tid) {//当页面为脏页面时
+                int tabId = pid.getTableId();
+                DbFile file =  Database.getCatalog().getDatabaseFile(tabId);
+                Page pageFromDisk = file.readPage(pid);//读取磁盘中对应的数据
+                pid2page.put(pid, pageFromDisk);//更新脏数据
+                page.markDirty(false, null);//更新页面脏标记
+            }
+        }
     }
 
     /**
@@ -294,6 +318,14 @@ public class BufferPool {
     public synchronized void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
+        for(Page page:pid2page.values()){
+            if (page.isDirty() != null && page.isDirty().equals(tid)) {
+                flushPage(page.getId());
+                if (page.isDirty() == null) {
+                    page.setBeforeImage();
+                }
+            }
+        }
     }
 
     /**

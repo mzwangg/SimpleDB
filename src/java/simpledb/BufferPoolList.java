@@ -23,7 +23,7 @@ public class BufferPoolList {
         this.pid2node = new ConcurrentHashMap<>();
     }
 
-    public void popNode(BufferPoolListNode node) {
+    public synchronized void popNode(BufferPoolListNode node) {
         if (node.prev != null) {
             node.prev.next = node.next;
         }else{
@@ -46,13 +46,13 @@ public class BufferPoolList {
     }
 
     //将某节点移动到新生代头部
-    public void moveNode2Front(BufferPoolListNode node) {
-        popNode(node);
-
-        //如果为真，则说明node为middle节点，如果不更改middle而直接将middle添加进头部的话会使新生代节点数变多
-        if(node.next==middle){
-            middle=middle.prev;
+    public synchronized void moveNode2Front(BufferPoolListNode node) {
+        if(node==middle){//当移除节点为middle时，需要先对middle进行更新
+            middle=node.next;
         }
+
+        //将节点移除
+        popNode(node);
 
         node.prev = null;
         node.next = front;
@@ -61,7 +61,7 @@ public class BufferPoolList {
     }
 
     //将某节点移动到老生代头部
-    public void moveNode2Middle(BufferPoolListNode node) {
+    public synchronized void moveNode2Middle(BufferPoolListNode node) {
         popNode(node);
 
         node.prev = middle.prev;
@@ -74,7 +74,7 @@ public class BufferPoolList {
     }
 
     //插入页面
-    public void push(PageId pid) {
+    public synchronized void push(PageId pid) {
         if (size < MAX_SIZE - 1) {//当页面未满时
             if (pid2node.containsKey(pid)) {//若存在该页面则直接移动到新生代头部
                 moveNode2Front(pid2node.get(pid));
@@ -95,8 +95,8 @@ public class BufferPoolList {
                     tempNode = tempNode.next;
                 }
                 middle = tempNode;
-                for (int i = newBlocksSize + 1; i < MAX_SIZE; i++) {
-                    tempNode = tempNode.next;
+                while(tempNode.next!=null){
+                    tempNode=tempNode.next;
                 }
                 tail = tempNode;
                 initial = true;
@@ -121,7 +121,7 @@ public class BufferPoolList {
     }
 
     //每次驱逐时都驱逐尾节点，当BufferPool未满时尾节点还不存在
-    public PageId evictPage() throws DbException{
+    public synchronized PageId evictPage() throws DbException{
         if (tail == null) {
             return null;
         }
