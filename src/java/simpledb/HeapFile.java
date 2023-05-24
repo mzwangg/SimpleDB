@@ -138,18 +138,20 @@ public class HeapFile implements DbFile {
                 modifiedPages.add(page);
                 break;
             }
+            Database.getBufferPool().releasePage(tid,pid);//此时已经可以释放锁了
         }
 
         //如果modifiedPages为空，则说明当前所有堆页已满，需要再增加一个堆页
         if (modifiedPages.isEmpty()) {
-            HeapPageId newPid = new HeapPageId(getId(), numPages());
-            HeapPage newDiskPage = new HeapPage(newPid, HeapPage.createEmptyPageData());
+            HeapPageId pid = new HeapPageId(getId(), numPages());
+            HeapPage newDiskPage = new HeapPage(pid, HeapPage.createEmptyPageData());
             writePage(newDiskPage);
-            HeapPage newPage = (HeapPage) Database.getBufferPool().getPage(tid, newPid, Permissions.READ_WRITE);
+            HeapPage newPage = (HeapPage) Database.getBufferPool().getPage(tid, pid, Permissions.READ_WRITE);
             newPage.insertTuple(t);
             newPage.markDirty(true, tid);
             modifiedPages.add(newPage);
         }
+
         return modifiedPages;
     }
 
@@ -186,6 +188,7 @@ public class HeapFile implements DbFile {
             public void open() throws DbException, TransactionAbortedException {
                 pagePos = 0;
                 HeapPageId pid = new HeapPageId(getId(), pagePos);
+                Page page=Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
                 tupleIterator = ((HeapPage) Database.getBufferPool()
                         .getPage(tid, pid, Permissions.READ_ONLY)).iterator();
             }

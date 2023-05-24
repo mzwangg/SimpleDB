@@ -191,29 +191,33 @@ public class BTreeFile implements DbFile {
      */
     private BTreeLeafPage findLeafPage(TransactionId tid, HashMap<PageId, Page> dirtypages, BTreePageId pid, Permissions perm,
                                        Field f) throws DbException, TransactionAbortedException {
-        if (pid.pgcateg() == BTreePageId.LEAF) {
-            //当为叶节点时直接返回
-            return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
-        }
+        switch (pid.pgcateg())
+        {
+            case BTreePageId.LEAF:
+                return (BTreeLeafPage) getPage(tid, dirtypages, pid, perm);
+            case BTreePageId.INTERNAL:
+                //得到该节点entry的迭代器
+                BTreeInternalPage page = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, perm);
+                Iterator<BTreeEntry> entries = page.iterator();
+                if(entries == null || !entries.hasNext())//进行检测
+                    throw new DbException("No that Entry!");
 
-        //得到该节点entry的迭代器
-        BTreeInternalPage page = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, perm);
-        Iterator<BTreeEntry> entries = page.iterator();
+                if (f == null)//查找空值时返回最左边的叶节点
+                    return findLeafPage(tid, dirtypages, entries.next().getLeftChild(), perm, f);
 
-        if (f == null) {
-            //查找空值时返回最左边的叶节点
-            return findLeafPage(tid, dirtypages, entries.next().getLeftChild(), perm, f);
-        }
-
-        while (true) {
-            BTreeEntry entry = entries.next();
-            if (entry.getKey().compare(Op.GREATER_THAN_OR_EQ, f)) {
-                //当前节点键值大于等于查找键值时在左子节点继续查找
-                return findLeafPage(tid, dirtypages, entry.getLeftChild(), perm, f);
-            }else if(!entries.hasNext()){
-                //当左边的entry的键值都小于查找键值时在最后一个entry的右子节点继续查找
+                BTreeEntry entry=null;
+                while (entries.hasNext()) {
+                    entry = entries.next();
+                    if (entry.getKey().compare(Op.GREATER_THAN_OR_EQ, f)) {
+                        //当前节点键值大于等于查找键值时在左子节点继续查找
+                        return findLeafPage(tid, dirtypages, entry.getLeftChild(), perm, f);
+                    }
+                }
                 return findLeafPage(tid, dirtypages, entry.getRightChild(), perm, f);
-            }
+            case BTreePageId.HEADER:
+            case BTreePageId.ROOT_PTR:
+            default:
+                throw new DbException("not valid page");
         }
     }
 
@@ -251,29 +255,33 @@ public class BTreeFile implements DbFile {
      */
     private BTreeLeafPage findReverseLeafPage(TransactionId tid, HashMap<PageId, Page> dirtypages, BTreePageId pid, Permissions perm,
                                               Field f) throws DbException, TransactionAbortedException {
-        if (pid.pgcateg() == BTreePageId.LEAF) {
-            //当为叶节点时直接返回
-            return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
-        }
+        switch (pid.pgcateg())
+        {
+            case BTreePageId.LEAF:
+                return (BTreeLeafPage) this.getPage(tid, dirtypages, pid, perm);
+            case BTreePageId.INTERNAL:
+                //得到该节点entry的迭代器
+                BTreeInternalPage page = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, perm);
+                Iterator<BTreeEntry> entries = page.reverseIterator();
+                if(entries == null || !entries.hasNext())//进行检测
+                    throw new DbException("No that Entry!");
 
-        //得到该节点entry的反向迭代器
-        BTreeInternalPage page = (BTreeInternalPage) this.getPage(tid, dirtypages, pid, perm);
-        Iterator<BTreeEntry> entries = page.reverseIterator();
+                if (f == null)//查找空值时返回最左边的叶节点
+                    return findReverseLeafPage(tid, dirtypages, entries.next().getRightChild(), perm, f);
 
-        if (f == null) {
-            //查找空值时返回最右边的叶节点
-            return findReverseLeafPage(tid, dirtypages, entries.next().getRightChild(), perm, f);
-        }
-
-        while (true) {
-            BTreeEntry entry = entries.next();
-            if (entry.getKey().compare(Op.LESS_THAN_OR_EQ, f)) {
-                //当前节点键值小于等于查找键值时在右子节点继续查找
-                return findReverseLeafPage(tid, dirtypages, entry.getRightChild(), perm, f);
-            }else if(!entries.hasNext()){
-                //当右边的entry的键值都大于查找键值时在第一个entry的左子节点继续查找
+                BTreeEntry entry=null;
+                while (entries.hasNext()) {
+                    entry = entries.next();
+                    if (entry.getKey().compare(Op.LESS_THAN_OR_EQ, f)) {
+                        //当前节点键值小于等于查找键值时在右子节点继续查找
+                        return findReverseLeafPage(tid, dirtypages, entry.getRightChild(), perm, f);
+                    }
+                }
                 return findReverseLeafPage(tid, dirtypages, entry.getLeftChild(), perm, f);
-            }
+            case BTreePageId.HEADER:
+            case BTreePageId.ROOT_PTR:
+            default:
+                throw new DbException("not valid page");
         }
     }
 
@@ -330,8 +338,8 @@ public class BTreeFile implements DbFile {
 
         //将溢出页面的后二分之一个元组移到rightPage中
         //不需要按照顺序插入，因为insertTuple内部保证了元组的有序性
-        for(int i=page.getNumTuples()/2; i>0; i--)
-        {
+        int tuplenum = page.getNumTuples();
+        for(int i=0; i<tuplenum/2; ++i) {
             Tuple tuple = tuples.next();
             page.deleteTuple(tuple);
             rightPage.insertTuple(tuple);
@@ -399,17 +407,17 @@ public class BTreeFile implements DbFile {
 
         //将溢出页面的后二分之一个entry移到rightPage中
         //由于在插入时会检查该entry是否在其他页面中存在,因此必须先删除后添加
-        for(int i=page.getNumEntries()/2; i>0; i--)
-        {
+        int numEntry = page.getNumEntries();
+        for(int i=0; i<numEntry/2; ++i){
             BTreeEntry entry = entrys.next();
             page.deleteKeyAndRightChild(entry);
             rightPage.insertEntry(entry);
         }
 
         //删除左边页面的最后一个entry，并加入父节点
-        BTreeEntry e = entrys.next();
-        Field index = e.getKey();
-        page.deleteKeyAndRightChild(e);
+        BTreeEntry entry = entrys.next();
+        Field index = entry.getKey();
+        page.deleteKeyAndRightChild(entry);
         BTreeEntry newEntry = new BTreeEntry(index, page.getId(), rightPage.getId());
         BTreeInternalPage parentPage = getParentWithEmptySlots(tid, dirtypages, page.getParentId(), index);
         parentPage.insertEntry(newEntry);
@@ -796,13 +804,13 @@ public class BTreeFile implements DbFile {
         Iterator<BTreeEntry> entryIterator = leftSibling.reverseIterator();
         if(entryIterator==null || !entryIterator.hasNext())
             throw new DbException("left sibling has no entry");
+        int numSteal = (leftSibling.getNumEntries() - page.getNumEntries())/2;//使偷取之后两者元组数相同
 
         //将parent的entry移动到page，并接上两个子节点
         BTreeEntry moveEntry = entryIterator.next();
         BTreeEntry center = new BTreeEntry(parentEntry.getKey(), moveEntry.getRightChild(), page.iterator().next().getLeftChild());
         page.insertEntry(center);
 
-        int numSteal = (leftSibling.getNumEntries() - page.getNumEntries())/2;//使偷取之后两者元组数相同
         //将sibling的entry取出，插入page
         for(int i=0; i<numSteal-1; ++i)
         {
@@ -846,13 +854,13 @@ public class BTreeFile implements DbFile {
         Iterator<BTreeEntry> entryIterator = rightSibling.iterator();
         if(entryIterator==null || !entryIterator.hasNext())
             throw new DbException("left sibling has no entry");
+        int numSteal = (rightSibling.getNumEntries() - page.getNumEntries())/2;//使偷取之后两者元组数相同
 
         //将parent的entry移动到page，并接上两个子节点
         BTreeEntry moveEntry = entryIterator.next();
         BTreeEntry center = new BTreeEntry(parentEntry.getKey(), page.reverseIterator().next().getRightChild(), moveEntry.getLeftChild());
         page.insertEntry(center);
 
-        int numSteal = (rightSibling.getNumEntries() - page.getNumEntries())/2;//使偷取之后两者元组数相同
         //将sibling的entry取出，插入page
         for(int i=0; i<numSteal-1; ++i)
         {
@@ -899,10 +907,11 @@ public class BTreeFile implements DbFile {
         //将左页面的元组全部移动到右页面
         //先删除后插入，因为需要更新tuple中的信息
         Iterator<Tuple> tupleIterator = rightPage.iterator();
-        while(tupleIterator.hasNext())
+        int numTuple = rightPage.getNumTuples();
+        for(int i=0; i<numTuple; ++i)
         {
             Tuple tuple = tupleIterator.next();
-            rightPage.deleteTuple(tuple);
+            rightPage.deleteTuple(tuple);     //鍏堝垹闄ゅ悗鎻掑叆锛屽洜涓洪渶瑕佹洿鏂皌uple涓殑淇℃伅
             leftPage.insertTuple(tuple);
         }
 

@@ -3,6 +3,7 @@ package simpledb;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -30,7 +31,7 @@ public class BufferPool {
     public final int NUM_PAGES;
     private final long WAIT_TIME = 2;
     private final long MAX_WAIT_TIME = 200;
-    private PageLruCache lruPagesPool;
+    private ConcurrentHashMap<PageId,Page> pid2page;
     private LockManager lockManager;
 
     /**
@@ -41,7 +42,7 @@ public class BufferPool {
     public BufferPool(int numPages) {
         // some code goes here
         this.NUM_PAGES = numPages;
-        lruPagesPool = new PageLruCache(DEFAULT_PAGES);
+        pid2page=new ConcurrentHashMap<>(numPages);
         this.lockManager = new LockManager();
     }
 
@@ -78,51 +79,46 @@ public class BufferPool {
             throws TransactionAbortedException, DbException {
         // some code goes here
 
-        //sleep之后再次判断是否获取到锁
-        long time = 0;
-        while (!lockManager.acquireLock(pid, tid, perm == Permissions.READ_ONLY)) {
-            try {
+        //通过设定最大响应时间判断死锁,sleep之后再次判断是否获取到锁
+//        long time = 0;
+//        while (!lockManager.getRWLock(tid, pid, perm == Permissions.READ_ONLY)) {
+//            try {
+//                Thread.sleep(WAIT_TIME);//没成功请求到页面时等待WAIT_TIME毫秒继续请求
+//                time += WAIT_TIME;
+//            } catch (InterruptedException e) {
+//                throw new TransactionAbortedException();
+//            }
+//            if (time > MAX_WAIT_TIME) {//若请求总时间超过设定时间则报错
+//                throw new TransactionAbortedException();
+//            }
+//        }
+
+
+        //通过依赖关系图判断死锁
+        while (!lockManager.getRWLock(tid,pid,perm==Permissions.READ_ONLY)) {
+            if (lockManager.deadlockOccurred(tid, pid)) {
+                throw new TransactionAbortedException();
+            }
+            try {//若没得到锁且没有死锁，则等待WAIT_TIME毫秒继续请求
                 Thread.sleep(WAIT_TIME);//没成功请求到页面时等待WAIT_TIME毫秒继续请求
-                time += WAIT_TIME;
             } catch (InterruptedException e) {
                 throw new TransactionAbortedException();
             }
-            if (time > MAX_WAIT_TIME) {//若请求总时间超过设定时间则报错
-                throw new TransactionAbortedException();
-            }
         }
 
-        Page page = lruPagesPool.get(pid);
-        if (page != null) {//直接命中
-            return page;
+        //当存在该页面时直接返回
+        if(pid2page.containsKey(pid)){
+            return pid2page.get(pid);
         }
 
-        //未命中，访问磁盘并将其缓存
-        DbFile df = Database.getCatalog().getDatabaseFile(pid.getTableId());
-        Page newPage = df.readPage(pid);
-        Page removedPage = lruPagesPool.put(pid, newPage);
-        if (removedPage != null) {
-            try {
-                flushPage(removedPage);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        //当缓存达到最大值时先驱逐一个页面
+        if(pid2page.size() >= NUM_PAGES){
+            evictPage();
         }
-        return newPage;
 
-//        //当存在该页面时直接返回
-//        if(pid2page.containsKey(pid)){
-//            return pid2page.get(pid);
-//        }
-//
-//        //当缓存达到最大值时先驱逐一个页面
-//        if(pid2page.size() >= NUM_PAGES){
-//            evictPage();
-//        }
-//
-//        Page page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
-//        pid2page.put(pid, page);
-//        return page;
+        Page page = Database.getCatalog().getDatabaseFile(pid.getTableId()).readPage(pid);
+        pid2page.put(pid, page);
+        return page;
     }
 
     /**
@@ -137,10 +133,9 @@ public class BufferPool {
     public void releasePage(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
-        if (!lockManager.releaseLock(pid, tid)) {
+        if (!lockManager.unLock(tid, pid)) {
             throw new IllegalArgumentException();
         }
-        ;
     }
 
     /**
@@ -157,10 +152,10 @@ public class BufferPool {
     /**
      * Return true if the specified transaction has a lock on the specified page
      */
-    public boolean holdsLock(TransactionId tid, PageId p) {
+    public boolean holdsLock(TransactionId tid, PageId pid) {
         // some code goes here
         // not necessary for lab1|lab2
-        return lockManager.holdsLock(p, tid);
+        return lockManager.holdsLock(tid, pid);
     }
 
     /**
@@ -184,11 +179,14 @@ public class BufferPool {
 
     //在需要回滚时，将页面恢复到原本的image
     public synchronized void rollBackPages(TransactionId tid) {
-        Iterator<Page> it = lruPagesPool.iterator();
-        while (it.hasNext()) {
-            Page p = it.next();
-            if (p.isDirty() != null && p.isDirty().equals(tid)) {
-                lruPagesPool.reCachePage(p.getId());
+        for(Page page:pid2page.values()){
+            if (page.isDirty() != null && page.isDirty().equals(tid)) {
+//                PageId pid=page.getId();
+//                DbFile df = Database.getCatalog().getDatabaseFile(pid.getTableId());
+//                Page originalPage = df.readPage(pid);
+//                originalPage.markDirty(false,null);
+//                pid2page.put(pid,originalPage);
+                discardPage(page.getId());
             }
         }
     }
@@ -217,9 +215,8 @@ public class BufferPool {
         DbFile hf = Database.getCatalog().getDatabaseFile(tableId);
         ArrayList<Page> affectedPages = hf.insertTuple(tid, t);
         for (Page page : affectedPages) {
-            //由于BufferPoolWrightTest的测试中未将申请的page加入BufferPool，故加入此判断
-            if (!lruPagesPool.isCached(page.getId())) {
-                lruPagesPool.put(page.getId(), page);
+            if (!pid2page.containsKey(page.getId())) {
+                pid2page.put(page.getId(), page);
             }
             page.markDirty(true, tid);
         }
@@ -244,7 +241,7 @@ public class BufferPool {
         // not necessary for lab1
 
         int tableId = t.getRecordId().getPageId().getTableId();
-        DbFile hf = (DbFile) Database.getCatalog().getDatabaseFile(tableId);
+        DbFile hf =  Database.getCatalog().getDatabaseFile(tableId);
         ArrayList<Page> affectedPages = hf.deleteTuple(tid, t);
         for (Page page : affectedPages) {
             page.markDirty(true, tid);
@@ -259,11 +256,9 @@ public class BufferPool {
     public synchronized void flushAllPages() throws IOException {
         // some code goes here
         // not necessary for lab1
-        Iterator<Page> it = lruPagesPool.iterator();
-        while (it.hasNext()) {
-            Page p = it.next();
-            if (p.isDirty() != null) {
-                flushPage(p.getId());
+        for(Page page:pid2page.values()){
+            if (page.isDirty() != null) {
+                flushPage(page.getId());
             }
         }
     }
@@ -280,23 +275,7 @@ public class BufferPool {
     public synchronized void discardPage(PageId pid) {
         // some code goes here
         // not necessary for lab1
-
-        //判断是否存在该页面
-        Page page = lruPagesPool.get(pid);
-        if (page == null) {
-            return;
-        }
-
-//        //在输入页面为脏页面时更新页面
-//        if (page.isDirty() != null) {
-//            try {
-//                flushPage(page.getId());
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-//        }
-
-        lruPagesPool.reCachePage(pid);
+        pid2page.remove(pid);
     }
 
     /**
@@ -307,26 +286,16 @@ public class BufferPool {
     private synchronized void flushPage(PageId pid) throws IOException {
         // some code goes here
         // not necessary for lab1
-        if (pid == null || !lruPagesPool.isCached(pid)) {
+        if (pid == null || !pid2page.containsKey(pid)) {
             return;
         }
 
-        Page dirty_page = lruPagesPool.get(pid);
+        Page dirty_page = pid2page.get(pid);
         if (dirty_page.isDirty() == null) {
             return;
         }
 
         DbFile hf = Database.getCatalog().getDatabaseFile(pid.getTableId());
-        hf.writePage(dirty_page);
-        dirty_page.markDirty(false, null);
-    }
-
-    private synchronized void flushPage(Page dirty_page) throws IOException {
-        if (dirty_page == null||dirty_page.isDirty() == null) {
-            return;
-        }
-
-        DbFile hf = Database.getCatalog().getDatabaseFile(dirty_page.getId().getTableId());
         hf.writePage(dirty_page);
         dirty_page.markDirty(false, null);
     }
@@ -337,9 +306,8 @@ public class BufferPool {
     public synchronized void flushPages(TransactionId tid) throws IOException {
         // some code goes here
         // not necessary for lab1|lab2
-        Iterator<Page> it = lruPagesPool.iterator();
-        while (it.hasNext()) {
-            Page page = it.next();
+
+        for(Page page:pid2page.values()){
             if (page.isDirty() != null && page.isDirty().equals(tid)) {
                 flushPage(page.getId());
             }
@@ -354,6 +322,16 @@ public class BufferPool {
         // some code goes here
         // not necessary for lab1
 
-        //该函数功能已经在PageLruCache类中实现
+        for(ConcurrentHashMap.Entry<PageId, Page> entry : pid2page.entrySet()) {
+            if(entry.getValue().isDirty() != null)continue;//若为脏页面则继续遍历
+            try{
+                flushPage(entry.getKey());
+            } catch (IOException e) {
+                throw new DbException("");
+            }
+            discardPage(entry.getKey());//因为此时为干净页面，直接删除缓存的页面即可
+            return;
+        }
+        throw new DbException("All pages are dirty");//若前面没有return，则说明全部为脏页面
     }
 }
